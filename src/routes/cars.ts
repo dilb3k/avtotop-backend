@@ -203,9 +203,12 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     } = req.body;
 
     // Validation
-    if (!title || !brand || !model || !year || !price || !city) {
-      return res.status(400).json({ error: 'Sarlavha, marka, model, yil, narx va shahar kiritilishi shart' });
+    if (!brand || !model || !year || !price || !city) {
+      return res.status(400).json({ error: 'Marka, model, yil, narx va shahar kiritilishi shart' });
     }
+
+    // Auto-generate title if not provided
+    const carTitle = title?.trim() || `${brand} ${model} ${year}`;
 
     if (price <= 0) {
       return res.status(400).json({ error: 'Narx 0 dan katta bo\'lishi kerak' });
@@ -220,7 +223,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       .from('cars')
       .insert({
         seller_id: req.user.id,
-        title: title.trim(),
+        title: carTitle,
         description: description?.trim() || null,
         brand: brand.trim(),
         model: model.trim(),
