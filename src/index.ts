@@ -43,6 +43,7 @@ import categoryRoutes from './routes/categories';
 import userRoutes from './routes/users';
 import favoriteRoutes from './routes/favorites';
 import searchRoutes from './routes/search';
+import uploadRoutes from './routes/upload';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/cars', carRoutes);
@@ -50,6 +51,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
