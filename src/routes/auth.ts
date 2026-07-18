@@ -45,7 +45,10 @@ router.post('/register', async (req: Request, res: Response) => {
     if (profileError) {
       console.error('Profile create error:', JSON.stringify(profileError));
       await supabase.auth.admin.deleteUser(authData.user.id);
-      return res.status(400).json({ error: 'Profil yaratishda xatolik. Iltimos, qaytadan urinib ko\'ring.' });
+      if (profileError.message?.includes('relation') || profileError.message?.includes('does not exist')) {
+        return res.status(500).json({ error: 'Database jadvali topilmadi. Admin bilan bog\'laning.' });
+      }
+      return res.status(400).json({ error: `Profil xatolik: ${profileError.message || profileError.code || 'Noma\'lum xatolik'}` });
     }
 
     // Sign in to get tokens
