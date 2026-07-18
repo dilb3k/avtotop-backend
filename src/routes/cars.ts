@@ -4,6 +4,38 @@ import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+// Get my listings (MUST be before /:id)
+router.get('/my/listings', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { status } = req.query;
+
+    let query = supabase
+      .from('cars')
+      .select(`
+        *,
+        categories:category_id (id, name, slug, icon),
+        car_images (id, url, is_primary)
+      `)
+      .eq('seller_id', req.user.id)
+      .order('created_at', { ascending: false });
+
+    if (status && ['active', 'sold', 'inactive'].includes(status as string)) {
+      query = query.eq('status', status);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return res.status(400).json({ error: 'E\'lonlarni olishda xatolik' });
+    }
+
+    res.json(data || []);
+  } catch (error: any) {
+    console.error('My listings error:', error);
+    res.status(500).json({ error: 'Serverda xatolik yuz berdi' });
+  }
+});
+
 // Get all cars with filters (public)
 router.get('/', optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
@@ -284,7 +316,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     if (updateData.engine_volume !== undefined) cleanData.engine_volume = updateData.engine_volume ? parseFloat(updateData.engine_volume) : null;
     if (updateData.mileage !== undefined) cleanData.mileage = updateData.mileage ? parseInt(updateData.mileage) : null;
     if (updateData.city) cleanData.city = updateData.city.trim();
-    if (updateData.status && ['active', 'sold', 'inactive'].includes(updateData.status)) {
+    if (updateData.status && ['active', 'sold', 'inactive', 'pending'].includes(updateData.status)) {
       cleanData.status = updateData.status;
     }
 
@@ -366,38 +398,6 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     res.json({ message: 'E\'lon muvaffaqiyatli o\'chirildi' });
   } catch (error: any) {
     console.error('Delete car error:', error);
-    res.status(500).json({ error: 'Serverda xatolik yuz berdi' });
-  }
-});
-
-// Get my listings
-router.get('/my/listings', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { status } = req.query;
-
-    let query = supabase
-      .from('cars')
-      .select(`
-        *,
-        categories:category_id (id, name, slug, icon),
-        car_images (id, url, is_primary)
-      `)
-      .eq('seller_id', req.user.id)
-      .order('created_at', { ascending: false });
-
-    if (status && ['active', 'sold', 'inactive'].includes(status as string)) {
-      query = query.eq('status', status);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      return res.status(400).json({ error: 'E\'lonlarni olishda xatolik' });
-    }
-
-    res.json(data || []);
-  } catch (error: any) {
-    console.error('My listings error:', error);
     res.status(500).json({ error: 'Serverda xatolik yuz berdi' });
   }
 });
