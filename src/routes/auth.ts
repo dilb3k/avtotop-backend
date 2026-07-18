@@ -7,7 +7,7 @@ const router = Router();
 // Register
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const { email, password, full_name, phone, role } = req.body;
+    const { email, password, full_name, phone } = req.body;
 
     if (!email || !password || !full_name) {
       return res.status(400).json({ error: 'Email, parol va to\'liq ism kiritilishi shart' });
@@ -31,7 +31,7 @@ router.post('/register', async (req: Request, res: Response) => {
       return res.status(400).json({ error: authError.message });
     }
 
-    // Create profile
+    // Create profile (role is always 'user' for new registrations)
     const { error: profileError } = await supabase
       .from('profiles')
       .insert({
@@ -39,13 +39,13 @@ router.post('/register', async (req: Request, res: Response) => {
         email,
         full_name,
         phone: phone || null,
-        role: role === 'seller' ? 'seller' : 'user'
+        role: 'user'
       });
 
     if (profileError) {
-      // Cleanup: delete auth user if profile creation fails
+      console.error('Profile create error:', JSON.stringify(profileError));
       await supabase.auth.admin.deleteUser(authData.user.id);
-      return res.status(400).json({ error: 'Profil yaratishda xatolik' });
+      return res.status(400).json({ error: 'Profil yaratishda xatolik. Iltimos, qaytadan urinib ko\'ring.' });
     }
 
     // Sign in to get tokens

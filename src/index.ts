@@ -20,8 +20,9 @@ export const supabase = createClient(
 // Middleware
 app.use(helmet());
 app.use(morgan('combined'));
+const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').filter(Boolean);
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
   credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
