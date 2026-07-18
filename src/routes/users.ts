@@ -41,7 +41,7 @@ router.get('/favorites', authenticate, async (req: AuthRequest, res: Response) =
 // Update own profile (MUST be before /:id)
 router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { full_name, phone, avatar_url, city, description } = req.body;
+    const { full_name, phone, avatar_url, city, description, telegram_id } = req.body;
 
     const updateData: any = {};
     if (full_name !== undefined) updateData.full_name = full_name.trim();
@@ -49,6 +49,7 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
     if (avatar_url !== undefined) updateData.avatar_url = avatar_url?.trim() || null;
     if (city !== undefined) updateData.city = city?.trim() || null;
     if (description !== undefined) updateData.description = description?.trim() || null;
+    if (telegram_id !== undefined) updateData.telegram_id = telegram_id?.trim() || null;
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ error: "Yangilash uchun ma'lumot kiritilmadi" });
