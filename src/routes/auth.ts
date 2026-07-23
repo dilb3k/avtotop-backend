@@ -1,8 +1,38 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../index';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import crypto from 'crypto';
 
 const router = Router();
+
+// Validate Telegram Web App initData
+function validateInitData(initData: string, botToken: string): { user: any } | null {
+  try {
+    const urlParams = new URLSearchParams(initData);
+    const hash = urlParams.get('hash');
+    urlParams.delete('hash');
+    
+    const dataCheckString = Array.from(urlParams.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n');
+    
+    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+    const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+    
+    if (calculatedHash !== hash) {
+      return null;
+    }
+    
+    const userParam = urlParams.get('user');
+    if (userParam) {
+      return { user: JSON.parse(userParam) };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // Register
 router.post('/register', async (req: Request, res: Response) => {
@@ -266,6 +296,154 @@ router.post('/login-bot', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Login-bot error:', error);
+    res.status(500).json({ error: 'Serverda xatolik yuz berdi' });
+  }
+});
+
+// Notify Telegram bot that user logged in via website
+router.post('/notify-bot-login', async (req: Request, res: Response) => {
+  try {
+    const { chat_id } = req.body;
+
+    if (!chat_id) {
+      return res.status(400).json({ error: 'chat_id kiritilishi shart' });
+    }
+
+    const BOT_TOKEN = process.env.BOT_TOKEN;
+    if (!BOT_TOKEN) {
+      return res.status(500).json({ error: 'BOT_TOKEN konfiguratsiyada yo\'q' });
+    }
+
+    const { full_name, email } = req.body;
+
+    const text = `✅ <b>Tizimga muvaffaqiyatli kirdingiz!</b>\n\n👤 ${full_name || 'Noma\'lum'}\n📧 ${email || ''}\n\n🏠 Endi botdan to\'liq foydalanishingiz mumkin.`;
+
+    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chat_id,
+        text: text,
+        parse_mode: 'HTML',
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!result.ok) {
+      console.error('Telegram send error:', result);
+      return res.status(500).json({ error: 'Botga xabar yuborishda xatolik' });
+    }
+
+    res.json({ message: 'Botga xabar yuborildi' });
+  } catch (error: any) {
+    console.error('Notify-bot-login error:', error);
+    res.status(500).json({ error: 'Serverda xatolik yuz berdi' });
+  }
+});
+
+// Login/Register via Telegram Mini App
+router.post('/mini-app-auth', async (req: Request, res: Response) => {
+  try {
+    const { initData } = req.body;
+
+    if (!initData) {
+      return res.status(400).json({ error: 'initData kiritilishi shart' });
+    }
+
+    const BOT_TOKEN = process.env.BOT_TOKEN;
+    if (!BOT_TOKEN) {
+      return res.status(500).json({ error: 'BOT_TOKEN konfiguratsiyada yo\'q' });
+    }
+
+    const validation = validateInitData(initData, BOT_TOKEN);
+    if (!validation || !validation.user) {
+      return res.status(401).json({ error: 'Noto\'g\'ri initData' });
+    }
+
+    const tgUser = validation.user;
+    const telegramId = tgUser.id.toString();
+    const email = `${telegramId}@telegram.avtotop`;
+    const fullName = `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || 'Telegram User';
+
+    // Check if profile exists with this telegram_id
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('telegram_id', telegramId)
+      .single();
+
+    if (existingProfile) {
+      // User exists, sign in
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password: telegramId,
+      });
+
+      if (authError) {
+        console.error('Mini app auth error:', authError);
+        return res.status(401).json({ error: 'Avtorizatsiya xatoligi' });
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      return res.json({
+        user: authData.user,
+        session: authData.session,
+        profile,
+        message: 'Muvaffaqiyatli kirildi'
+      });
+    }
+
+    // Create new user
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password: telegramId,
+      email_confirm: true,
+      user_metadata: { telegram_id: telegramId },
+    });
+
+    if (authError) {
+      return res.status(400).json({ error: authError.message });
+    }
+
+    // Create profile
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert({
+        id: authData.user.id,
+        email,
+        full_name: fullName,
+        telegram_id: telegramId,
+        role: 'user',
+      });
+
+    if (profileError) {
+      await supabase.auth.admin.deleteUser(authData.user.id);
+      return res.status(400).json({ error: `Profil xatolik: ${profileError.message || 'Noma\'lum xatolik'}` });
+    }
+
+    // Sign in
+    const { data: signInData } = await supabase.auth.signInWithPassword({ email, password: telegramId });
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authData.user.id)
+      .single();
+
+    res.status(201).json({
+      user: authData.user,
+      session: signInData?.session,
+      profile,
+      message: 'Muvaffaqiyatli ro\'yxatdan o\'tildi'
+    });
+  } catch (error: any) {
+    console.error('Mini app auth error:', error);
     res.status(500).json({ error: 'Serverda xatolik yuz berdi' });
   }
 });
